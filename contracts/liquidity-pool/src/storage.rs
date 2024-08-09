@@ -1,9 +1,11 @@
-use soroban_sdk::{Address, Env, Vec};
+use soroban_sdk::{Address, Env, Map, Vec};
 
 use crate::{
     errors::LPError,
     types::{Borrower, DataKey, Lender, Loan},
 };
+
+type Loans = Map<u64, Loan>;
 
 pub fn check_admin(env: &Env) -> Result<Address, LPError> {
     let admin = read_admin(env)?;
@@ -55,11 +57,19 @@ pub fn read_contributions(env: &Env) -> Vec<Address> {
         .unwrap_or(Vec::new(env))
 }
 
-pub fn read_loan(env: &Env, address: &Address, loan_id: &u64) -> Result<Loan, LPError> {
+pub fn read_loan(loans: &Loans, loan_id: &u64) -> Result<Loan, LPError> {
+    let loan = loans
+        .try_get(*loan_id)
+        .map_err(|_| LPError::LoanNotFoundOrExists)?
+        .ok_or(LPError::LoanNotFoundOrExists)?;
+    Ok(loan)
+}
+
+pub fn read_loans(env: &Env, address: &Address) -> Loans {
     env.storage()
         .persistent()
-        .get(&DataKey::Loan(*loan_id, address.clone()))
-        .ok_or(LPError::LoanNotFoundOrExists)
+        .get(&DataKey::Loan(address.clone()))
+        .unwrap_or(Map::new(env))
 }
 
 pub fn read_lender(env: &Env, lender: &Address) -> Result<Lender, LPError> {
@@ -87,12 +97,6 @@ pub fn remove_borrower(env: &Env, borrower: &Address) {
     env.storage()
         .persistent()
         .remove(&DataKey::Borrower(borrower.clone()))
-}
-
-pub fn remove_loan(env: &Env, address: &Address, loan_id: &u64) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::Loan(*loan_id, address.clone()));
 }
 
 pub fn remove_lender(env: &Env, lender: &Address) {
@@ -131,10 +135,10 @@ pub fn write_contract_balance(env: &Env, amount: &i128) {
         .set(&DataKey::TotalBalance, amount);
 }
 
-pub fn write_loan(env: &Env, address: &Address, loan_id: &u64, loan: &Loan) {
+pub fn write_loans(env: &Env, address: &Address, loans: &Map<u64, Loan>) {
     env.storage()
         .persistent()
-        .set(&DataKey::Loan(*loan_id, address.clone()), loan);
+        .set(&DataKey::Loan(address.clone()), loans);
 }
 
 pub fn write_lender(env: &Env, lender: &Address, data: &Lender) {

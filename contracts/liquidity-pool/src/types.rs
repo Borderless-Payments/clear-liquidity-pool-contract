@@ -43,5 +43,5 @@ pub enum DataKey {
     Vault,
     Borrower(Address),
     Lender(Address),
-    Loan(u64, Address),
+    Loan(Address),
 }

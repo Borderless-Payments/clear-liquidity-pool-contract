@@ -15,17 +15,18 @@ use crate::operations::{subtract, sum};
 use crate::percentage::{calculate_fees, calculate_repayment_amount, process_lender_contribution};
 use crate::storage::{
     check_admin, has_admin, has_borrower, has_lender, read_admin, read_borrower,
-    read_contract_balance, read_contributions, read_lender, read_loan, read_token, read_vault,
-    remove_borrower, remove_lender, remove_lender_contribution, remove_loan, write_admin,
-    write_borrower, write_contract_balance, write_lender, write_lender_contribution, write_loan,
-    write_token, write_vault,
+    read_contract_balance, read_contributions, read_lender, read_loans, read_token, read_vault,
+    remove_borrower, remove_lender, remove_lender_contribution, write_admin, write_borrower,
+    write_contract_balance, write_lender, write_lender_contribution, write_loans, write_token,
+    write_vault,
 };
 use crate::types::{Borrower, Lender, LenderStatus, Loan};
 use soroban_sdk::{
     contract, contractimpl, contractmeta,
     token::{self},
-    Address, Env,
+    Address, Env, Map,
 };
+use storage::read_loan;
 
 fn token_transfer(env: &Env, from: &Address, to: &Address, amount: &i128) -> Result<(), LPError> {
     let token_id = read_token(env)?;
@@ -40,6 +41,16 @@ fn check_nonnegative_amount(amount: i128) -> Result<(), LPError> {
     }
 
     Ok(())
+}
+
+fn generate_id(env: &Env, loans: &Map<u64, Loan>) -> u64 {
+    loop {
+        let id: u64 = env.prng().gen();
+
+        if !loans.contains_key(id) {
+            return id;
+        }
+    }
 }
 
 contractmeta!(
@@ -175,23 +186,27 @@ impl LiquidityPoolTrait for LiquidityPoolContract {
         }
 
         let lenders = read_contributions(&env);
+        let mut loans = read_loans(&env, &address);
 
         let lender_contributions =
             process_lender_contribution(&env, lenders.clone(), &amount, &total_balance)?;
 
         total_balance = subtract(&total_balance, &amount)?;
 
-        let loan_id = env.prng().gen();
+        let loan_id: u64 = generate_id(&env, &loans);
+
         let new_loan = Loan {
             amount,
             start_time: env.ledger().timestamp(),
             contributions: lender_contributions,
         };
 
+        loans.set(loan_id, new_loan);
+
         token_transfer(&env, &env.current_contract_address(), &address, &amount)?;
 
         write_contract_balance(&env, &total_balance);
-        write_loan(&env, &address, &loan_id, &new_loan);
+        write_loans(&env, &address, &loans);
 
         event::loan(&env, address, loan_id, amount);
         Ok(loan_id)
@@ -206,7 +221,8 @@ impl LiquidityPoolTrait for LiquidityPoolContract {
             return Err(LPError::BorrowerNotRegistered);
         }
 
-        let mut loan = read_loan(&env, &borrower, &loan_id)?;
+        let mut loans = read_loans(&env, &borrower);
+        let mut loan = read_loan(&loans, &loan_id)?;
 
         let vault = read_vault(&env)?;
         let total_fees = calculate_fees(&env, &loan)?;
@@ -247,13 +263,13 @@ impl LiquidityPoolTrait for LiquidityPoolContract {
 
         if repay_amount_diff > 0 {
             loan.amount = repay_amount_diff;
-            write_loan(&env, &borrower, &loan_id, &loan);
+            loans.set(loan_id, loan);
         } else {
-            remove_loan(&env, &borrower, &loan_id);
+            loans.remove(loan_id);
         }
 
         write_contract_balance(&env, &total_balance);
-
+        write_loans(&env, &borrower, &loans);
         event::repay_loan(&env, borrower, loan_id, amount);
         Ok(())
     }
@@ -265,7 +281,9 @@ impl LiquidityPoolTrait for LiquidityPoolContract {
             return Err(LPError::BorrowerNotRegistered);
         }
 
-        let loan = read_loan(&env, &borrower, &loan_id)?;
+        let loans = read_loans(&env, &borrower);
+        let loan = read_loan(&loans, &loan_id)?;
+
         let loan_amount = sum(&loan.amount, &calculate_fees(&env, &loan)?)?;
 
         Ok(loan_amount)

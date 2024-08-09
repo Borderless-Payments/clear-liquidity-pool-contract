@@ -3,9 +3,9 @@
 use crate::errors::LPError;
 use crate::storage::{
     has_borrower, has_lender, read_admin, read_borrower, read_contract_balance, read_contributions,
-    read_lender, read_loan, read_token, read_vault,
+    read_lender, read_loan, read_loans, read_token, read_vault,
 };
-use crate::types::{Borrower, DataKey, LenderStatus};
+use crate::types::{Borrower, LenderStatus};
 use crate::LiquidityPoolContractClient;
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
@@ -129,12 +129,10 @@ impl LiquidityPoolContract {
             .as_contract(&self.contract_id, || has_borrower(&self.env, borrower))
     }
 
-    pub fn has_loan(&self, borrower: &Address, loan_id: u64) -> bool {
+    pub fn has_loan(&self, address: &Address, loan_id: u64) -> bool {
         self.env.as_contract(&self.contract_id, || {
-            self.env
-                .storage()
-                .persistent()
-                .has(&DataKey::Loan(loan_id, borrower.clone()))
+            let loans = read_loans(&self.env, address);
+            loans.contains_key(loan_id)
         })
     }
 
@@ -171,7 +169,8 @@ impl LiquidityPoolContract {
 
     pub fn read_loan_amount(&self, address: &Address, loan_id: u64) -> Result<i128, LPError> {
         self.env.as_contract(&self.contract_id, || {
-            let loan = read_loan(&self.env, address, &loan_id)?;
+            let loans = read_loans(&self.env, address);
+            let loan = read_loan(&loans, &loan_id)?;
             Ok(loan.amount)
         })
     }
