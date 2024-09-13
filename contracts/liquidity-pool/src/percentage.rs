@@ -9,9 +9,10 @@ type ContributionsMap = Map<Address, i64>;
 type ContributionResult = Result<ContributionsMap, LPError>;
 
 pub(crate) const ONE_XLM_IN_STROOPS: i64 = 10_000_000;
-const INTEREST_RATE_PER_DAY: u64 = 10;
+const INTEREST_RATE_PER_DAY: u64 = 100;
 const SECONDS_PER_DAY: u64 = 86400;
 const TOTAL_BASIS_PERCENTAGE: u64 = 100_000;
+const MINIMUM_DURATION_DAYS: u64 = 1;
 
 fn to_fixed_point() -> Result<i128, LPError> {
     multiply(&100, &(ONE_XLM_IN_STROOPS as i128))
@@ -20,16 +21,21 @@ fn to_fixed_point() -> Result<i128, LPError> {
 pub fn calculate_fees(env: &Env, loan: &Loan) -> Result<i128, LPError> {
     let now_ledger = env.ledger().timestamp();
     let start_time = loan.start_time;
+    let duration_seconds = subtract(&now_ledger, &start_time)?;
 
     let divisor = subtract(&now_ledger, &start_time)?;
-    let duration_days = divide(&divisor, &SECONDS_PER_DAY)?;
-
+    let duration_days= if duration_seconds < SECONDS_PER_DAY {
+        MINIMUM_DURATION_DAYS
+    }else{
+        divide(&divisor, &SECONDS_PER_DAY)?
+    };
     let interest_loan = multiply(&INTEREST_RATE_PER_DAY, &duration_days)?;
     let fees_fixed_point = multiply(&loan.amount, &(interest_loan as i128))?;
     let total_fees = divide(&fees_fixed_point, &(TOTAL_BASIS_PERCENTAGE as i128))?;
 
     Ok(total_fees)
 }
+
 
 fn calculate_percentage(amount: &i128, total_balance: &i128) -> Result<i64, LPError> {
     let divisor = multiply(amount, &(to_fixed_point()?))?;
