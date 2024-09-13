@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 
 NETWORK="$1"
 
-WASM_PATH="target/wasm32-unknown-unknown/release/"
+WASM_PATH="./target/wasm32-unknown-unknown/release/"
 CLEAR_WASM=$WASM_PATH"liquidity_pool"
 DEPLOYER_WASM=$WASM_PATH"liquidity_pool_deployer"
 TOKEN_ID="CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
@@ -35,18 +35,18 @@ testnet)
 esac
 
 echo Add the $NETWORK network to cli client 
-  soroban network add \
+  stellar network add \
   --global $NETWORK \
   --rpc-url "$SOROBAN_RPC_URL" \
   --network-passphrase "$SOROBAN_NETWORK_PASSPHRASE"
 
-if !(soroban soroban keys address clear-admin | grep admin 2>&1 >/dev/null); then
+if !(stellar keys address clear-admin | grep admin 2>&1 >/dev/null); then
   echo Create the admin identity
-  soroban keys generate clear-admin --network $NETWORK
+  stellar keys generate clear-admin --network $NETWORK
 fi
 
-CLEAR_ADMIN_SECRET="$(soroban keys show clear-admin)"
-CLEAR_ADMIN_ADDRESS="$(soroban keys address clear-admin)"
+CLEAR_ADMIN_SECRET="$(stellar keys show clear-admin)"
+CLEAR_ADMIN_ADDRESS="$(stellar keys address clear-admin)"
 
 echo "Admin Public key: $CLEAR_ADMIN_ADDRESS"
 echo "Admin Secret key: $CLEAR_ADMIN_SECRET"
@@ -55,22 +55,23 @@ ARGS="--network $NETWORK --source-account clear-admin"
 
 echo Build and optimize liquidity-pool
 cargo build --target wasm32-unknown-unknown --release -p liquidity-pool
-soroban contract optimize --wasm $CLEAR_WASM".wasm"
+stellar contract optimize --wasm $CLEAR_WASM".wasm"
 
 echo Build and optimize liquidity-pool-deployer
 cargo build --target wasm32-unknown-unknown --release -p liquidity-pool-deployer
-soroban contract optimize --wasm $DEPLOYER_WASM".wasm"
+stellar contract optimize --wasm $DEPLOYER_WASM".wasm"
 
 echo Deploy the clear contract deployer
+echo $DEPLOYER_WASM".optimized.wasm"
 CONTRACT_DEPLOYER_ID="$(
-  soroban contract deploy $ARGS \
+  stellar contract deploy $ARGS \
   --wasm $DEPLOYER_WASM".optimized.wasm"
 )"
 echo "Contract deployed successfully with ID: $CONTRACT_DEPLOYER_ID"
 
 echo Generate Vault Address
   stellar keys generate vault --network $NETWORK
-  VAULT_ADDRESS="$(soroban keys address vault)"
+  VAULT_ADDRESS="$(stellar keys address vault)"
 echo "Vault Address: $VAULT_ADDRESS"
 
 echo Install Clear Liquidity Pool Contract
